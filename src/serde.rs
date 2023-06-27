@@ -1,47 +1,19 @@
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-};
+use std::{borrow::Cow, collections::HashSet};
 
 use bevy::{
     prelude::*,
     reflect::{
-        serde::{
-            TypedReflectDeserializer,
-            TypedReflectSerializer,
-            UntypedReflectDeserializer,
-        },
-        TypeRegistryArc,
-        TypeRegistryInternal,
+        serde::{TypedReflectDeserializer, TypedReflectSerializer, UntypedReflectDeserializer},
+        TypeRegistryArc, TypeRegistryInternal,
     },
 };
 use serde::{
-    de::{
-        self,
-        DeserializeSeed,
-        Error,
-        MapAccess,
-        SeqAccess,
-        Visitor,
-    },
-    ser::{
-        SerializeMap,
-        SerializeSeq,
-        SerializeStruct,
-    },
-    Deserialize,
-    Deserializer,
-    Serialize,
-    Serializer,
+    de::{self, DeserializeSeed, Error, MapAccess, SeqAccess, Visitor},
+    ser::{SerializeMap, SerializeSeq, SerializeStruct},
+    Deserialize, Deserializer, Serialize, Serializer,
 };
 
-use crate::{
-    entity::SaveableEntity,
-    snapshot::RawSnapshot,
-    Rollback,
-    Rollbacks,
-    Snapshot,
-};
+use crate::{entity::SaveableEntity, snapshot::RawSnapshot, Rollback, Rollbacks, Snapshot};
 
 // Helpers |-----------------------------------------------------------------------------------------------------------
 
@@ -195,12 +167,12 @@ impl<'a> Serialize for EntitySerializer<'a> {
 }
 
 struct EntityDeserializer<'a> {
-    id: u32,
+    id: u64,
     registry: &'a TypeRegistryInternal,
 }
 
 impl<'a> EntityDeserializer<'a> {
-    fn new(id: u32, registry: &'a TypeRegistryInternal) -> Self {
+    fn new(id: u64, registry: &'a TypeRegistryInternal) -> Self {
         Self { id, registry }
     }
 }
@@ -212,15 +184,19 @@ impl<'a, 'de> DeserializeSeed<'de> for EntityDeserializer<'a> {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_struct(ENTITY_STRUCT, &[ENTITY_FIELD_COMPONENTS], EntityVisitor {
-            id: self.id,
-            registry: self.registry,
-        })
+        deserializer.deserialize_struct(
+            ENTITY_STRUCT,
+            &[ENTITY_FIELD_COMPONENTS],
+            EntityVisitor {
+                id: self.id,
+                registry: self.registry,
+            },
+        )
     }
 }
 
 struct EntityVisitor<'a> {
-    id: u32,
+    id: u64,
     registry: &'a TypeRegistryInternal,
 }
 
@@ -346,7 +322,7 @@ impl<'a, 'de> Visitor<'de> for EntitiesVisitor<'a> {
     {
         let mut entities = Vec::new();
 
-        while let Some(id) = map.next_key::<u32>()? {
+        while let Some(id) = map.next_key::<u64>()? {
             let entity = map.next_value_seed(EntityDeserializer::new(id, self.registry))?;
             entities.push(entity);
         }
@@ -538,9 +514,12 @@ impl<'a, 'de> DeserializeSeed<'de> for RollbackDeserializer<'a> {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_newtype_struct(ROLLBACK_STRUCT, RollbackVisitor {
-            registry: self.registry,
-        })
+        deserializer.deserialize_newtype_struct(
+            ROLLBACK_STRUCT,
+            RollbackVisitor {
+                registry: self.registry,
+            },
+        )
     }
 }
 
@@ -708,9 +687,13 @@ impl<'a, 'de> DeserializeSeed<'de> for RollbacksDeserializer<'a> {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_struct(ROLLBACKS_STRUCT, ROLLBACKS_FIELDS, RollbacksVisitor {
-            registry: self.registry,
-        })
+        deserializer.deserialize_struct(
+            ROLLBACKS_STRUCT,
+            ROLLBACKS_FIELDS,
+            RollbacksVisitor {
+                registry: self.registry,
+            },
+        )
     }
 }
 
@@ -852,9 +835,13 @@ impl<'a, 'de> DeserializeSeed<'de> for SnapshotDeserializer<'a> {
     where
         D: serde::Deserializer<'de>,
     {
-        deserializer.deserialize_struct(SNAPSHOT_STRUCT, SNAPSHOT_FIELDS, SnapshotVisitor {
-            registry: self.registry,
-        })
+        deserializer.deserialize_struct(
+            SNAPSHOT_STRUCT,
+            SNAPSHOT_FIELDS,
+            SnapshotVisitor {
+                registry: self.registry,
+            },
+        )
     }
 }
 

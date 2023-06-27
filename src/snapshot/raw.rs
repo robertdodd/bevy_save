@@ -1,19 +1,13 @@
 use std::collections::HashSet;
 
 use bevy::{
-    ecs::{
-        entity::EntityMap,
-        reflect::ReflectMapEntities,
-        system::CommandQueue,
-    },
+    ecs::{entity::EntityMap, reflect::ReflectMapEntities, system::CommandQueue},
     prelude::*,
     reflect::TypeRegistration,
+    utils::hashbrown::hash_map::Entry,
 };
 
-use crate::{
-    entity::SaveableEntity,
-    prelude::*,
-};
+use crate::{entity::SaveableEntity, prelude::*};
 
 pub(crate) struct RawSnapshot {
     pub(crate) resources: Vec<Box<dyn Reflect>>,
@@ -44,7 +38,7 @@ where
 
         for entity in entities {
             let mut entry = SaveableEntity {
-                entity: entity.index(),
+                entity: entity.to_bits(),
                 components: Vec::new(),
             };
 
@@ -251,11 +245,12 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
 
         let mapping = self.mapping.as_ref().unwrap_or(&mapping_default);
 
-        let fallback = if let MappingMode::Simple = &mapping {
+        let mut fallback = if let MappingMode::Simple = &mapping {
             let mut fallback = EntityMap::default();
 
             for entity in self.world.iter_entities() {
-                fallback.insert(Entity::from_raw(entity.id().index()), entity.id());
+                println!("inserting entity: {:?} ({:?})", entity.id(), entity.id());
+                fallback.insert(entity.id(), entity.id());
             }
 
             fallback
@@ -268,11 +263,14 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
         // Apply snapshot entities
         for saved in &self.snapshot.entities {
             let index = saved.entity;
+            let old_entity = Entity::from_bits(index);
 
             let entity = saved
                 .map(&self.map)
-                .or_else(|| fallback.get(Entity::from_raw(index)).ok())
+                .or_else(|| fallback.get(old_entity).ok())
                 .unwrap_or_else(|| self.world.spawn_empty().id());
+
+            fallback.insert(old_entity, entity);
 
             spawned.push(entity);
 
@@ -296,13 +294,34 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
         }
 
         // ReflectMapEntities
+        // Because this gets applied to the entire world, we need to insert all existing entity ids into the
+        // `EntityMap` before it gets applied
+        for entity in self.world.iter_entities() {
+            if let Entry::Vacant(v) = fallback.entry(entity.id()) {
+                v.insert(entity.id());
+            }
+        }
         for reg in registry.iter() {
             if let Some(mapper) = reg.data::<ReflectMapEntities>() {
                 mapper
-                    .map_entities(self.world, &self.map)
+                    .map_entities(self.world, &fallback)
                     .map_err(SaveableError::MapEntitiesError)?;
             }
         }
+
+        // TODO: Fix `Children`
+        // If the `Children` type is included in saves, it may contain references to entities that no longer exist. We
+        // should probably filter them out.
+        let mut queue = CommandQueue::default();
+        let mut commands = Commands::new(&mut queue, self.world);
+        for &entity in &spawned {
+            let entity_ref = self.world.entity(entity);
+            let mut entity_mut = commands.entity(entity);
+            if let Some(parent) = entity_ref.get::<Parent>() {
+                entity_mut.set_parent(parent.get());
+            }
+        }
+        queue.apply(self.world);
 
         // Entity hook
         if let Some(hook) = &self.hook {
