@@ -249,7 +249,6 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
             let mut fallback = EntityMap::default();
 
             for entity in self.world.iter_entities() {
-                println!("inserting entity: {:?} ({:?})", entity.id(), entity.id());
                 fallback.insert(entity.id(), entity.id());
             }
 
