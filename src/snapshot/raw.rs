@@ -245,17 +245,11 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
 
         let mapping = self.mapping.as_ref().unwrap_or(&mapping_default);
 
-        let mut fallback = if let MappingMode::Simple = &mapping {
-            let mut fallback = EntityMap::default();
-
-            for entity in self.world.iter_entities() {
-                fallback.insert(entity.id(), entity.id());
-            }
-
-            fallback
-        } else {
-            EntityMap::default()
-        };
+        // the entity map should always contain all existing entities, because it gets applied to the whole world.
+        let mut fallback = EntityMap::default();
+        for entity in self.world.iter_entities() {
+            fallback.insert(entity.id(), entity.id());
+        }
 
         let mut spawned = Vec::new();
 
@@ -264,10 +258,14 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
             let index = saved.entity;
             let old_entity = Entity::from_bits(index);
 
-            let entity = saved
-                .map(&self.map)
-                .or_else(|| fallback.get(old_entity).ok())
-                .unwrap_or_else(|| self.world.spawn_empty().id());
+            // If Simple, attempt to map an existing entity ID first. If Strict, get a new entity
+            let entity = match &mapping {
+                MappingMode::Simple => saved
+                    .map(&self.map)
+                    .or_else(|| fallback.get(old_entity).ok())
+                    .unwrap_or_else(|| self.world.spawn_empty().id()),
+                MappingMode::Strict => self.world.spawn_empty().id(),
+            };
 
             fallback.insert(old_entity, entity);
 
@@ -292,14 +290,6 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
             }
         }
 
-        // ReflectMapEntities
-        // Because this gets applied to the entire world, we need to insert all existing entity ids into the
-        // `EntityMap` before it gets applied
-        for entity in self.world.iter_entities() {
-            if let Entry::Vacant(v) = fallback.entry(entity.id()) {
-                v.insert(entity.id());
-            }
-        }
         for reg in registry.iter() {
             if let Some(mapper) = reg.data::<ReflectMapEntities>() {
                 mapper
