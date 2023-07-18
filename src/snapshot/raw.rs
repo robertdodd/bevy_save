@@ -4,7 +4,6 @@ use bevy::{
     ecs::{entity::EntityMap, reflect::ReflectMapEntities, system::CommandQueue},
     prelude::*,
     reflect::TypeRegistration,
-    utils::hashbrown::hash_map::Entry,
 };
 
 use crate::{entity::SaveableEntity, prelude::*};
@@ -245,27 +244,28 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
 
         let mapping = self.mapping.as_ref().unwrap_or(&mapping_default);
 
-        // the entity map should always contain all existing entities, because it gets applied to the whole world.
-        let mut fallback = EntityMap::default();
-        for entity in self.world.iter_entities() {
-            fallback.insert(entity.id(), entity.id());
-        }
+        let mut fallback = if let MappingMode::Simple = &mapping {
+            let mut fallback = EntityMap::default();
+
+            for entity in self.world.iter_entities() {
+                fallback.insert(entity.id(), entity.id());
+            }
+
+            fallback
+        } else {
+            EntityMap::default()
+        };
 
         let mut spawned = Vec::new();
 
         // Apply snapshot entities
         for saved in &self.snapshot.entities {
-            let index = saved.entity;
-            let old_entity = Entity::from_bits(index);
+            let old_entity = Entity::from_bits(saved.entity);
 
-            // If Simple, attempt to map an existing entity ID first. If Strict, get a new entity
-            let entity = match &mapping {
-                MappingMode::Simple => saved
-                    .map(&self.map)
-                    .or_else(|| fallback.get(old_entity).ok())
-                    .unwrap_or_else(|| self.world.spawn_empty().id()),
-                MappingMode::Strict => self.world.spawn_empty().id(),
-            };
+            let entity = saved
+                .map(&self.map)
+                .or_else(|| fallback.get(old_entity).ok())
+                .unwrap_or_else(|| self.world.spawn_empty().id());
 
             fallback.insert(old_entity, entity);
 
@@ -293,7 +293,7 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
         for reg in registry.iter() {
             if let Some(mapper) = reg.data::<ReflectMapEntities>() {
                 mapper
-                    .map_entities(self.world, &fallback)
+                    .map_specific_entities(self.world, &fallback, &spawned)
                     .map_err(SaveableError::MapEntitiesError)?;
             }
         }
