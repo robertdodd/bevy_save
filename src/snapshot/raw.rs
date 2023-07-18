@@ -290,11 +290,19 @@ impl<'a> Applier<'a, &'a RawSnapshot> {
             }
         }
 
+        // apply the entity map to the world
+        // if using strict mode, only apply the map to the `spawned` entities to avoid updating valid references in
+        // existing entities. See `bevy_ecs::reflect::ReflectMapEntities` for more info
         for reg in registry.iter() {
             if let Some(mapper) = reg.data::<ReflectMapEntities>() {
-                mapper
-                    .map_specific_entities(self.world, &fallback, &spawned)
-                    .map_err(SaveableError::MapEntitiesError)?;
+                match mapping {
+                    MappingMode::Simple => mapper
+                        .map_entities(self.world, &fallback)
+                        .map_err(SaveableError::MapEntitiesError)?,
+                    MappingMode::Strict => mapper
+                        .map_specific_entities(self.world, &fallback, &spawned)
+                        .map_err(SaveableError::MapEntitiesError)?,
+                }
             }
         }
 
